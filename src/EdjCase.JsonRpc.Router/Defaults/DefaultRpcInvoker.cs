@@ -89,9 +89,10 @@ namespace EdjCase.JsonRpc.Router.Defaults
 			var invokingTasks = new List<Task<RpcResponse>>();
 			foreach (RpcRequest request in requests)
 			{
-                Task<RpcResponse> invokingTask = Task.Run(async () => await this.InvokeRequestAsync(request, path, routeContext));
-                if (request.Id.HasValue)
+                // todo make tru fire and forget
+                if (true || request.Id.HasValue)
                 {
+                    Task<RpcResponse> invokingTask = Task.Run(async () => await this.InvokeRequestAsync(request, path, routeContext));
                     //Only wait for non-notification requests
                     invokingTasks.Add(invokingTask);
                 }
