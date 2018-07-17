@@ -89,15 +89,15 @@ namespace EdjCase.JsonRpc.Router.Defaults
 			var invokingTasks = new List<Task<RpcResponse>>();
 			foreach (RpcRequest request in requests)
 			{
-				Task<RpcResponse> invokingTask = Task.Run(async () => await this.InvokeRequestAsync(request, path, routeContext));
-				if (request.Id.HasValue)
-				{
-					//Only wait for non-notification requests
-					invokingTasks.Add(invokingTask);
-				}
-			}
+                Task<RpcResponse> invokingTask = Task.Run(async () => await this.InvokeRequestAsync(request, path, routeContext));
+                if (request.Id.HasValue)
+                {
+                    //Only wait for non-notification requests
+                    invokingTasks.Add(invokingTask);
+                }
+            }
 
-			await Task.WhenAll(invokingTasks.ToArray());
+            await Task.WhenAll(invokingTasks.ToArray());
 
 			List<RpcResponse> responses = invokingTasks
 				.Select(t => t.Result)
@@ -661,10 +661,14 @@ namespace EdjCase.JsonRpc.Router.Defaults
 			{
 				if (!parametersMap.ContainsKey(parameterInfo.Name))
 				{
-				   if (!parameterInfo.IsOptional)
+				    if (!parameterInfo.IsOptional)
 					{
 						parameterList = null;
 						return false;
+					}
+					else
+					{
+						parameterList[parameterInfo.Position] = Type.Missing;
 					}
 				}
 				else
