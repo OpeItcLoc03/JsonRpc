@@ -23,6 +23,8 @@ namespace EdjCase.JsonRpc.Router.Defaults
 	/// </summary>
 	public class DefaultRpcInvoker : IRpcInvoker
 	{
+		private readonly IServiceProvider serviceProvider;
+
 		/// <summary>
 		/// Convert method name and parameters in request from snake case to camel case
 		/// </summary>
@@ -48,7 +50,7 @@ namespace EdjCase.JsonRpc.Router.Defaults
 		private IOptions<RpcServerConfiguration> serverConfig { get; }
 
 		private JsonSerializer jsonSerializerCache { get; set; }
-
+		
 		private JsonSerializer GetJsonSerializer()
 		{
 			if (this.jsonSerializerCache == null)
@@ -66,8 +68,9 @@ namespace EdjCase.JsonRpc.Router.Defaults
 		/// <param name="logger">Optional logger for logging Rpc invocation</param>
 		/// <param name="serverConfig">Configuration data for the server</param>
 		public DefaultRpcInvoker(IAuthorizationService authorizationService, IAuthorizationPolicyProvider policyProvider,
-			ILogger<DefaultRpcInvoker> logger, IOptions<RpcServerConfiguration> serverConfig)
+			ILogger<DefaultRpcInvoker> logger, IOptions<RpcServerConfiguration> serverConfig, IServiceProvider serviceProvider)
 		{
+			this.serviceProvider = serviceProvider;
 			this.authorizationService = authorizationService;
 			this.policyProvider = policyProvider;
 			this.logger = logger;
@@ -89,20 +92,15 @@ namespace EdjCase.JsonRpc.Router.Defaults
 			var invokingTasks = new List<Task<RpcResponse>>();
 			foreach (RpcRequest request in requests)
 			{
-                // todo make tru fire and forget
-                if (true || request.Id.HasValue)
-                {
-                    Task<RpcResponse> invokingTask = Task.Run(async () => await this.InvokeRequestAsync(request, path, routeContext));
-                    //Only wait for non-notification requests
-                    invokingTasks.Add(invokingTask);
-                }
-            }
+				Task<RpcResponse> invokingTask = Task.Run(async () => await this.InvokeRequestAsync(request, path, routeContext).ConfigureAwait(false));;
+				invokingTasks.Add(invokingTask);
+			}
 
             await Task.WhenAll(invokingTasks.ToArray());
 
 			List<RpcResponse> responses = invokingTasks
 				.Select(t => t.Result)
-				.Where(r => r != null)
+				.Where(r => r != null && ((r.Id != null) && ((RpcId)r.Id).HasValue || r.HasError))
 				.ToList();
 
 			this.logger?.LogDebug($"Finished '{requests.Count}' batch requests");
@@ -146,10 +144,18 @@ namespace EdjCase.JsonRpc.Router.Defaults
 
 				if (isAuthorized)
 				{
-
-					this.logger?.LogDebug($"Attempting to invoke method '{request.Method}'");
-					object result = await this.InvokeAsync(rpcMethod, path, routeContext.RequestServices);
-					this.logger?.LogDebug($"Finished invoking method '{request.Method}'");
+					object result = null;
+					if (request.Id.HasValue )
+					{
+						this.logger?.LogDebug($"Attempting to invoke method '{request.Method}'");
+						result = await this.InvokeAsync(rpcMethod, path);
+						this.logger?.LogDebug($"Finished invoking method '{request.Method}'");
+					}
+					else
+					{
+						this.logger?.LogDebug($"Attempting to invoke notification '{request.Method}'");
+						this.FireAndForget(async () => await this.InvokeAsync(rpcMethod, path));
+					}
 
 					JsonSerializer jsonSerializer = this.GetJsonSerializer();
 					if (result is IRpcMethodResult)
@@ -187,8 +193,9 @@ namespace EdjCase.JsonRpc.Router.Defaults
 				//Only give a response if there is an id
 				return rpcResponse;
 			}
-			this.logger?.LogDebug($"Finished request with no id. Not returning a response");
-			return null;
+			
+			this.logger?.LogDebug($"Finished request with no id.");
+			return rpcResponse;
 		}
 
 		private async Task<bool> IsAuthorizedAsync(MethodInfo methodInfo, IRouteContext routeContext)
@@ -382,14 +389,14 @@ namespace EdjCase.JsonRpc.Router.Defaults
 		/// <exception cref="RpcInvalidParametersException">Thrown when conversion of parameters fails or when invoking the method is not compatible with the parameters</exception>
 		/// <param name="parameters">List of parameters to invoke the method with</param>
 		/// <returns>The result of the invoked method</returns>
-		private async Task<object> InvokeAsync(RpcMethodInfo methodInfo, RpcPath path, IServiceProvider serviceProvider)
+		private async Task<object> InvokeAsync(RpcMethodInfo methodInfo, RpcPath path)
 		{
 			object obj = null;
-			if (serviceProvider != null)
+			if (this.serviceProvider != null)
 			{
 				//Use service provider (if exists) to create instance
 				var objectFactory = ActivatorUtilities.CreateFactory(methodInfo.Method.DeclaringType, new Type[0]);
-				obj = objectFactory(serviceProvider, null);
+				obj = objectFactory(this.serviceProvider, null);
 			}
 			if (obj == null)
 			{
@@ -406,7 +413,7 @@ namespace EdjCase.JsonRpc.Router.Defaults
 			}
 			catch (TargetInvocationException ex)
 			{
-				var routeInfo = new RpcRouteInfo(methodInfo, path, serviceProvider);
+				var routeInfo = new RpcRouteInfo(methodInfo, path, this.serviceProvider);
 
 				//Controller error handling
 				RpcErrorFilterAttribute errorFilter = methodInfo.Method.DeclaringType.GetTypeInfo().GetCustomAttribute<RpcErrorFilterAttribute>();
@@ -430,6 +437,24 @@ namespace EdjCase.JsonRpc.Router.Defaults
 			}
 		}
 
+		/// <summary>
+		/// Method to fire and forget the given action.
+		/// Logs the error in the event of the exception, but no exception is raised.
+		/// </summary>
+		/// <param name="action">The Action to execute.</param>
+		private void FireAndForget(Action action)
+		{
+			Task.Run(action)
+				.ContinueWith(previousTask =>
+				{
+					previousTask?.Exception?.Handle(ex =>
+					{
+						logger.LogException(ex);
+						return true; //mark as handled
+					});
+				}, TaskContinuationOptions.OnlyOnFaulted);
+		}
+		
 		/// <summary>
 		/// Handles/Awaits the result object if it is a async Task
 		/// </summary>
@@ -608,24 +633,23 @@ namespace EdjCase.JsonRpc.Router.Defaults
 			{
 				if (value is JToken tokenValue)
 				{
+					JsonSerializer serializer = this.GetJsonSerializer();
 					switch (tokenValue.Type)
 					{
 						case JTokenType.Array:
 							{
-								JsonSerializer serializer = this.GetJsonSerializer();
 								JArray jArray = (JArray)tokenValue;
 								convertedValue = jArray.ToObject(parameterType, serializer);
 								return true;
 							}
 						case JTokenType.Object:
 							{
-								JsonSerializer serializer = this.GetJsonSerializer();
 								JObject jObject = (JObject)tokenValue;
 								convertedValue = jObject.ToObject(parameterType, serializer);
 								return true;
 							}
 						default:
-							convertedValue = tokenValue.ToObject(parameterType);
+							convertedValue = tokenValue.ToObject(parameterType, serializer);
 							return true;
 					}
 				}

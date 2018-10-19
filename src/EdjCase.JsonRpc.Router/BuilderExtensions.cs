@@ -105,10 +105,10 @@ namespace Microsoft.AspNetCore.Builder
 				.AddRouting()
 				.AddAuthorization()
 				.Configure<RpcServerConfiguration>(configureOptions ?? (options => { }))
-				.AddScoped<IRpcInvoker, DefaultRpcInvoker>()
-				.AddScoped<IRpcParser, DefaultRpcParser>()
-				.AddScoped<IRpcRequestHandler, RpcRequestHandler>()
-				.AddScoped<IRpcCompressor, DefaultRpcCompressor>();
+				.AddSingleton<IRpcInvoker, DefaultRpcInvoker>()
+				.AddSingleton<IRpcParser, DefaultRpcParser>()
+				.AddSingleton<IRpcRequestHandler, RpcRequestHandler>()
+				.AddSingleton<IRpcCompressor, DefaultRpcCompressor>();
 		}
 	}
 }

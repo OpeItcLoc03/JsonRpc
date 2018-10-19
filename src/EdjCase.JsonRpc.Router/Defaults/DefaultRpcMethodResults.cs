@@ -43,7 +43,7 @@ namespace EdjCase.JsonRpc.Router.Defaults
 		/// <param name="id">Rpc request id</param>
 		/// <param name="serializer">Json serializer function to use for objects for the response</param>
 		/// <returns>Rpc response for request</returns>
-		public RpcResponse ToRpcResponse(object id, Func<object, JToken> serializer)
+		public RpcResponse ToRpcResponse(RpcId id, Func<object, JToken> serializer)
 		{
 			JToken data = this.Data == null ? null : serializer(this.Data);
 			RpcError error = new RpcError(this.ErrorCode, this.Message, data);
@@ -75,7 +75,7 @@ namespace EdjCase.JsonRpc.Router.Defaults
 		/// <param name="id">Rpc request id</param>
 		/// <param name="serializer">Json serializer function to use for objects for the response</param>
 		/// <returns>Rpc response for request</returns>
-		public RpcResponse ToRpcResponse(object id, Func<object, JToken> serializer)
+		public RpcResponse ToRpcResponse(RpcId id, Func<object, JToken> serializer)
 		{
 			JToken jToken = this.ReturnObject == null ? null : serializer(this.ReturnObject);
 			return new RpcResponse(id, jToken);

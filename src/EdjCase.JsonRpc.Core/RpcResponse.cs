@@ -18,21 +18,21 @@ namespace EdjCase.JsonRpc.Core
 		}
 
 		/// <param name="id">Request id</param>
-		protected RpcResponse(object id)
+		protected RpcResponse(RpcId id)
 		{
-			this.Id = id;
+			this.Id = id.HasValue ? id : null;
 		}
 
 		/// <param name="id">Request id</param>
 		/// <param name="error">Request error</param>
-		public RpcResponse(object id, RpcError error) : this(id)
+		public RpcResponse(RpcId id, RpcError error) : this(id)
 		{
 			this.Error = error;
 		}
 
 		/// <param name="id">Request id</param>
 		/// <param name="result">Response result object</param>
-		public RpcResponse(object id, JToken result) : this(id)
+		public RpcResponse(RpcId id, JToken result) : this(id)
 		{
 			this.Result = result;
 		}

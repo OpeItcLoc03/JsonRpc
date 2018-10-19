@@ -44,7 +44,7 @@ namespace EdjCase.JsonRpc.Core
 
 		public RpcId(string id)
 		{
-			this.HasValue = true;
+			this.HasValue = !string.IsNullOrWhiteSpace(id);
 			this.Value = id;
 			this.Type = RpcIdType.String;
 		}
